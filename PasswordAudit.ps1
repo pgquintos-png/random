@@ -1,10 +1,11 @@
 param(
     [Parameter(Mandatory = $false)]
     [string]$UserName,
-    [int]$SinceHours = 24,
+    [int]$SinceHours = 10,
     [string]$OutputPath = ".\PasswordAudit_Report.csv",
     [switch]$UseLocalOnly,
     [switch]$UseADOnly,
+    [switch]$IncludeDisabledUsers,
     [int]$BadLogonThreshold = 3,
     [int]$PasswordAgeWarningDays = 90
 )
@@ -126,6 +127,7 @@ Write-Host "========================================`n" -ForegroundColor Cyan
 
 Write-Host "Configuration:" -ForegroundColor Green
 Write-Host "  - Audit Window: Last $SinceHours hours"
+Write-Host "  - User Filter: $(if($IncludeDisabledUsers){'All Users (Enabled + Disabled)'}else{'Active Users Only'})"
 Write-Host "  - Bad Logon Threshold: $BadLogonThreshold"
 Write-Host "  - Password Age Warning: $PasswordAgeWarningDays days"
 Write-Host "  - Output File: $OutputPath`n"
@@ -140,10 +142,13 @@ if ($UserName) {
         return
     }
 } else {
-    Write-Host "Retrieving all Active Directory users..." -ForegroundColor Yellow
+    Write-Host "Retrieving Active Directory users..." -ForegroundColor Yellow
     try {
-        $users = Get-ADUser -Filter * -Properties PasswordLastSet, PasswordNeverExpires, PasswordNotRequired, LockedOut, BadLogonCount, LastBadPasswordAttempt, DisplayName, Enabled
-        Write-Host "Found $($users.Count) users. Starting audit...`n" -ForegroundColor Green
+        # Filter for enabled users only unless -IncludeDisabledUsers is specified
+        $filter = if ($IncludeDisabledUsers) { "*" } else { "Enabled -eq `$true" }
+        $users = Get-ADUser -Filter $filter -Properties PasswordLastSet, PasswordNeverExpires, PasswordNotRequired, LockedOut, BadLogonCount, LastBadPasswordAttempt, DisplayName, Enabled
+        $userType = if ($IncludeDisabledUsers) { "total" } else { "active" }
+        Write-Host "Found $($users.Count) $userType users. Starting audit...`n" -ForegroundColor Green
     } catch {
         Write-Error "Failed to retrieve AD users: $_"
         return
@@ -188,8 +193,12 @@ $enabledUsers = ($results | Where-Object { $_.Enabled }).Count
 $disabledUsers = $totalUsers - $enabledUsers
 
 Write-Host "Total Users Audited: $totalUsers" -ForegroundColor White
-Write-Host "  - Enabled: $enabledUsers" -ForegroundColor Green
-Write-Host "  - Disabled: $disabledUsers" -ForegroundColor Gray
+if ($IncludeDisabledUsers) {
+    Write-Host "  - Enabled: $enabledUsers" -ForegroundColor Green
+    Write-Host "  - Disabled: $disabledUsers" -ForegroundColor Gray
+} else {
+    Write-Host "  (Active users only - use -IncludeDisabledUsers to include disabled accounts)" -ForegroundColor Gray
+}
 
 Write-Host "`nPassword Policy Issues:" -ForegroundColor Yellow
 $neverExpires = ($results | Where-Object { $_.PasswordNeverExpires -eq $true }).Count
