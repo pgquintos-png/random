@@ -1,0 +1,1 @@
+get-aduser -identity (Username) -properties * | select samaccountname, accountexpirationdate, accountexpires, accountlockouttime, badlogoncount, padpwdcount, lastbadpasswordattempt, lastlogondate, lockedout, passwordexpired, passwordlastset, pwdlastset | format-list
